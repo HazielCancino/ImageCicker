@@ -1,549 +1,83 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Color Extraction Studio</title>
+    <!-- Include Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Include Inter font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-        
-        * {
-            font-family: 'Inter', sans-serif;
+      /* Base styles */
+      * {
+        font-family: 'Inter', sans-serif;
+      }
+      
+      /* Glass effect */
+      .glass-effect {
+        backdrop-filter: blur(16px);
+        background: rgba(30, 41, 59, 0.5);
+        border: 1px solid rgba(148, 163, 184, 0.1);
+      }
+      
+      /* Gradient text */
+      .gradient-text {
+        background: linear-gradient(45deg, #a855f7, #ec4899);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+      
+      /* Custom scrollbar */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      
+      ::-webkit-scrollbar-track {
+        background: #1e1e2d;
+      }
+      
+      ::-webkit-scrollbar-thumb {
+        background: #6366f1;
+        border-radius: 4px;
+      }
+      
+      ::-webkit-scrollbar-thumb:hover {
+        background: #7c3aed;
+      }
+      
+      /* Hide scrollbar but keep functionality */
+      .scrollbar-hide::-webkit-scrollbar {
+        display: none;
+      }
+      
+      .scrollbar-hide {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
+      
+      /* Animation for color picker activation */
+      @keyframes pulse {
+        0% {
+          box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.7);
         }
-        
-        .glass-effect {
-            backdrop-filter: blur(16px);
-            background: rgba(30, 41, 59, 0.5);
-            border: 1px solid rgba(148, 163, 184, 0.1);
+        70% {
+          box-shadow: 0 0 0 10px rgba(99, 102, 241, 0);
         }
-        
-        .gradient-text {
-            background: linear-gradient(45deg, #a855f7, #ec4899);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+        100% {
+          box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);
         }
-        
-        .color-preview-tooltip {
-            position: fixed;
-            pointer-events: none;
-            z-index: 1000;
-            transform: translate(-50%, -100%);
-            opacity: 0;
-            transition: opacity 0.2s ease;
-        }
-        
-        .color-preview-tooltip.visible {
-            opacity: 1;
-        }
-        
-        .crosshair-cursor {
-            cursor: crosshair;
-        }
-        
-        .color-swatch {
-            transition: all 0.2s ease;
-        }
-        
-        .color-swatch:hover {
-            transform: scale(1.05);
-        }
-        
-        .upload-area {
-            transition: all 0.3s ease;
-        }
-        
-        .upload-area:hover {
-            border-color: #a855f7;
-            background: rgba(30, 41, 59, 0.3);
-        }
-        
-        .btn-primary {
-            background: linear-gradient(45deg, #8b5cf6, #ec4899);
-            transition: all 0.2s ease;
-        }
-        
-        .btn-primary:hover {
-            background: linear-gradient(45deg, #7c3aed, #db2777);
-            transform: translateY(-1px);
-        }
-        
-        .btn-secondary {
-            background: rgba(51, 65, 85, 1);
-            transition: all 0.2s ease;
-        }
-        
-        .btn-secondary:hover {
-            background: rgba(71, 85, 105, 1);
-        }
-        
-        .btn-active {
-            background: linear-gradient(45deg, #10b981, #059669);
-        }
-        
-        .copy-btn {
-            transition: all 0.2s ease;
-        }
-        
-        .copy-btn:hover {
-            color: white;
-        }
-        
-        .toast {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 1000;
-            background: rgba(34, 197, 94, 0.9);
-            color: white;
-            padding: 12px 24px;
-            border-radius: 8px;
-            backdrop-filter: blur(8px);
-            opacity: 0;
-            transform: translateX(100%);
-            transition: all 0.3s ease;
-        }
-        
-        .toast.show {
-            opacity: 1;
-            transform: translateX(0);
-        }
+      }
+      
+      .pulse {
+        animation: pulse 2s infinite;
+      }
     </style>
-</head>
-<body class="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-4">
-    <div class="max-w-7xl mx-auto">
-        <!-- Header -->
-        <div class="text-center mb-8">
-            <h1 class="text-4xl font-bold text-white mb-2 gradient-text">
-                Color Extraction Studio
-            </h1>
-            <p class="text-slate-300">Upload an image and extract precise color values with a click</p>
-        </div>
-
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <!-- Image Upload & Display -->
-            <div class="lg:col-span-2">
-                <div class="glass-effect rounded-2xl p-6">
-                    <!-- Upload Area -->
-                    <div id="upload-area" class="upload-area border-2 border-dashed border-slate-600 rounded-xl p-12 text-center cursor-pointer">
-                        <div class="upload-content">
-                            <svg class="mx-auto mb-4 text-slate-400" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                                <polyline points="7,10 12,15 17,10"/>
-                                <line x1="12" y1="15" x2="12" y2="3"/>
-                            </svg>
-                            <p class="text-slate-300 text-lg mb-2">Drop your image here</p>
-                            <p class="text-slate-500 mb-4">or click to browse</p>
-                            <span class="inline-block px-4 py-2 btn-primary text-white rounded-lg">
-                                Select Image
-                            </span>
-                        </div>
-                    </div>
-                    
-                    <!-- Image Display -->
-                    <div id="image-container" class="hidden">
-                        <div class="mb-4 flex items-center justify-between">
-                            <h3 class="text-white text-lg font-semibold">Click to extract colors</h3>
-                            <div class="flex gap-2">
-                                <button id="picker-toggle" class="px-4 py-2 rounded-lg transition-all duration-200 flex items-center gap-2 btn-secondary text-slate-300">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <path d="M2 21L12 11L21 2"/>
-                                        <path d="M16 16L20 20"/>
-                                        <path d="M15 15L19 19"/>
-                                    </svg>
-                                    Activate
-                                </button>
-                                <button id="change-image" class="px-4 py-2 btn-secondary text-slate-300 rounded-lg transition-all duration-200">
-                                    Change Image
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <div class="relative overflow-hidden rounded-xl">
-                            <img id="main-image" class="max-w-full h-auto rounded-xl" />
-                            <canvas id="canvas" style="display: none;"></canvas>
-                        </div>
-                    </div>
-                    
-                    <input type="file" id="file-input" accept="image/*" class="hidden" />
-                </div>
-            </div>
-
-            <!-- Color Information Panel -->
-            <div class="space-y-6">
-                <!-- Current Color -->
-                <div class="glass-effect rounded-2xl p-6">
-                    <h3 class="text-white text-lg font-semibold mb-4 flex items-center gap-2">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="13.5" cy="6.5" r=".5"/>
-                            <circle cx="17.5" cy="10.5" r=".5"/>
-                            <circle cx="8.5" cy="7.5" r=".5"/>
-                            <circle cx="6.5" cy="11.5" r=".5"/>
-                            <circle cx="12.5" cy="13.5" r=".5"/>
-                            <circle cx="16.5" cy="17.5" r=".5"/>
-                            <circle cx="6.5" cy="21.5" r=".5"/>
-                            <circle cx="16.5" cy="5.5" r=".5"/>
-                            <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>
-                        </svg>
-                        Selected Color
-                    </h3>
-                    
-                    <div class="space-y-4">
-                        <div id="color-display" class="w-full h-24 rounded-xl border-4 border-white shadow-lg" style="background-color: #6366f1;"></div>
-                        
-                        <div class="space-y-3">
-                            <div class="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg">
-                                <span class="text-slate-300">HEX</span>
-                                <div class="flex items-center gap-2">
-                                    <span id="hex-value" class="text-white font-mono">#6366f1</span>
-                                    <button onclick="copyToClipboard('#6366f1')" class="p-1 text-slate-400 copy-btn">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                                        </svg>
-                                    </button>
-                                </div>
-                            </div>
-                            
-                            <div class="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg">
-                                <span class="text-slate-300">RGB</span>
-                                <div class="flex items-center gap-2">
-                                    <span id="rgb-value" class="text-white font-mono">99, 102, 241</span>
-                                    <button onclick="copyToClipboard('rgb(99, 102, 241)')" class="p-1 text-slate-400 copy-btn">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                                        </svg>
-                                    </button>
-                                </div>
-                            </div>
-                            
-                            <div class="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg">
-                                <span class="text-slate-300">HSL</span>
-                                <div class="flex items-center gap-2">
-                                    <span id="hsl-value" class="text-white font-mono">239°, 84%, 67%</span>
-                                    <button onclick="copyToClipboard('hsl(239, 84%, 67%)')" class="p-1 text-slate-400 copy-btn">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                                        </svg>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Color History -->
-                <div id="color-history" class="glass-effect rounded-2xl p-6 hidden">
-                    <h3 class="text-white text-lg font-semibold mb-4 flex items-center gap-2">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                            <circle cx="12" cy="12" r="3"/>
-                        </svg>
-                        Color History
-                    </h3>
-                    
-                    <div id="history-grid" class="grid grid-cols-5 gap-2"></div>
-                </div>
-
-                <!-- Instructions -->
-                <div class="glass-effect rounded-2xl p-6">
-                    <h3 class="text-white text-lg font-semibold mb-4">How to Use</h3>
-                    <div class="space-y-2 text-slate-300 text-sm">
-                        <p>1. Upload an image by clicking the upload area</p>
-                        <p>2. Click "Activate" to enable color picking</p>
-                        <p>3. Click anywhere on the image to extract the color</p>
-                        <p>4. Copy color values by clicking the copy icons</p>
-                        <p>5. View your color history below</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Color Preview Tooltip -->
-    <div id="color-tooltip" class="color-preview-tooltip">
-        <div class="bg-slate-900 border border-slate-600 rounded-lg p-2 shadow-xl">
-            <div id="tooltip-color" class="w-8 h-8 rounded border-2 border-white shadow-lg mb-1"></div>
-            <p id="tooltip-text" class="text-xs text-white text-center">#000000</p>
-        </div>
-    </div>
-
-    <!-- Toast Notification -->
-    <div id="toast" class="toast">
-        <span id="toast-text">Copied to clipboard!</span>
-    </div>
-
-    <script>
-        let currentImage = null;
-        let isPickerActive = false;
-        let colorHistory = [];
-        let currentColor = '#6366f1';
-        
-        const uploadArea = document.getElementById('upload-area');
-        const fileInput = document.getElementById('file-input');
-        const imageContainer = document.getElementById('image-container');
-        const mainImage = document.getElementById('main-image');
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-        const pickerToggle = document.getElementById('picker-toggle');
-        const changeImageBtn = document.getElementById('change-image');
-        const colorDisplay = document.getElementById('color-display');
-        const hexValue = document.getElementById('hex-value');
-        const rgbValue = document.getElementById('rgb-value');
-        const hslValue = document.getElementById('hsl-value');
-        const colorHistoryDiv = document.getElementById('color-history');
-        const historyGrid = document.getElementById('history-grid');
-        const colorTooltip = document.getElementById('color-tooltip');
-        const tooltipColor = document.getElementById('tooltip-color');
-        const tooltipText = document.getElementById('tooltip-text');
-        const toast = document.getElementById('toast');
-        const toastText = document.getElementById('toast-text');
-
-        // Upload handlers
-        uploadArea.addEventListener('click', () => fileInput.click());
-        changeImageBtn.addEventListener('click', () => fileInput.click());
-        
-        uploadArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            uploadArea.style.borderColor = '#a855f7';
-        });
-        
-        uploadArea.addEventListener('dragleave', () => {
-            uploadArea.style.borderColor = '#64748b';
-        });
-        
-        uploadArea.addEventListener('drop', (e) => {
-            e.preventDefault();
-            uploadArea.style.borderColor = '#64748b';
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                handleImageUpload(files[0]);
-            }
-        });
-
-        fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                handleImageUpload(e.target.files[0]);
-            }
-        });
-
-        // Picker toggle
-        pickerToggle.addEventListener('click', () => {
-            isPickerActive = !isPickerActive;
-            updatePickerButton();
-            if (isPickerActive) {
-                mainImage.classList.add('crosshair-cursor');
-            } else {
-                mainImage.classList.remove('crosshair-cursor');
-                hideColorPreview();
-            }
-        });
-
-        // Image interactions
-        mainImage.addEventListener('click', (e) => {
-            if (!isPickerActive) return;
-            
-            const color = getColorAtPosition(e.clientX, e.clientY);
-            setSelectedColor(color);
-            addToHistory(color);
-            
-            isPickerActive = false;
-            updatePickerButton();
-            mainImage.classList.remove('crosshair-cursor');
-            hideColorPreview();
-        });
-
-        mainImage.addEventListener('mousemove', (e) => {
-            if (!isPickerActive) return;
-            
-            const color = getColorAtPosition(e.clientX, e.clientY);
-            showColorPreview(e.clientX, e.clientY, color);
-        });
-
-        mainImage.addEventListener('mouseleave', () => {
-            hideColorPreview();
-        });
-
-        function handleImageUpload(file) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const img = new Image();
-                img.onload = () => {
-                    canvas.width = img.width;
-                    canvas.height = img.height;
-                    ctx.drawImage(img, 0, 0);
-                    
-                    mainImage.src = e.target.result;
-                    currentImage = e.target.result;
-                    
-                    uploadArea.classList.add('hidden');
-                    imageContainer.classList.remove('hidden');
-                };
-                img.src = e.target.result;
-            };
-            reader.readAsDataURL(file);
-        }
-
-        function getColorAtPosition(clientX, clientY) {
-            const rect = mainImage.getBoundingClientRect();
-            const scaleX = canvas.width / rect.width;
-            const scaleY = canvas.height / rect.height;
-            const x = (clientX - rect.left) * scaleX;
-            const y = (clientY - rect.top) * scaleY;
-            
-            const imageData = ctx.getImageData(x, y, 1, 1);
-            const pixel = imageData.data;
-            
-            return rgbToHex(pixel[0], pixel[1], pixel[2]);
-        }
-
-        function rgbToHex(r, g, b) {
-            return '#' + [r, g, b].map(x => {
-                const hex = x.toString(16);
-                return hex.length === 1 ? '0' + hex : hex;
-            }).join('');
-        }
-
-        function hexToRgb(hex) {
-            const r = parseInt(hex.slice(1, 3), 16);
-            const g = parseInt(hex.slice(3, 5), 16);
-            const b = parseInt(hex.slice(5, 7), 16);
-            return [r, g, b];
-        }
-
-        function rgbToHsl(r, g, b) {
-            r /= 255;
-            g /= 255;
-            b /= 255;
-            
-            const max = Math.max(r, g, b);
-            const min = Math.min(r, g, b);
-            let h, s, l = (max + min) / 2;
-
-            if (max === min) {
-                h = s = 0;
-            } else {
-                const d = max - min;
-                s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-                switch (max) {
-                    case r: h = (g - b) / d + (g < b ? 6 : 0); break;
-                    case g: h = (b - r) / d + 2; break;
-                    case b: h = (r - g) / d + 4; break;
-                }
-                h /= 6;
-            }
-
-            return [Math.round(h * 360), Math.round(s * 100), Math.round(l * 100)];
-        }
-
-        function setSelectedColor(color) {
-            currentColor = color;
-            colorDisplay.style.backgroundColor = color;
-            hexValue.textContent = color;
-            
-            const [r, g, b] = hexToRgb(color);
-            rgbValue.textContent = `${r}, ${g}, ${b}`;
-            
-            const [h, s, l] = rgbToHsl(r, g, b);
-            hslValue.textContent = `${h}°, ${s}%, ${l}%`;
-            
-            // Update copy button handlers
-            updateCopyButtons(color, r, g, b, h, s, l);
-        }
-
-        function updateCopyButtons(hex, r, g, b, h, s, l) {
-            const copyButtons = document.querySelectorAll('.copy-btn');
-            copyButtons[0].onclick = () => copyToClipboard(hex);
-            copyButtons[1].onclick = () => copyToClipboard(`rgb(${r}, ${g}, ${b})`);
-            copyButtons[2].onclick = () => copyToClipboard(`hsl(${h}, ${s}%, ${l}%)`);
-        }
-
-        function addToHistory(color) {
-            if (!colorHistory.includes(color)) {
-                colorHistory.unshift(color);
-                if (colorHistory.length > 10) {
-                    colorHistory.pop();
-                }
-                updateHistoryDisplay();
-            }
-        }
-
-        function updateHistoryDisplay() {
-            if (colorHistory.length === 0) {
-                colorHistoryDiv.classList.add('hidden');
-                return;
-            }
-            
-            colorHistoryDiv.classList.remove('hidden');
-            historyGrid.innerHTML = '';
-            
-            colorHistory.forEach(color => {
-                const swatch = document.createElement('button');
-                swatch.className = 'aspect-square rounded-lg border-2 border-slate-600 hover:border-white color-swatch';
-                swatch.style.backgroundColor = color;
-                swatch.title = color;
-                swatch.onclick = () => setSelectedColor(color);
-                historyGrid.appendChild(swatch);
-            });
-        }
-
-        function updatePickerButton() {
-            if (isPickerActive) {
-                pickerToggle.className = 'px-4 py-2 rounded-lg transition-all duration-200 flex items-center gap-2 btn-active text-white';
-                pickerToggle.innerHTML = `
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M2 21L12 11L21 2"/>
-                        <path d="M16 16L20 20"/>
-                        <path d="M15 15L19 19"/>
-                    </svg>
-                    Active
-                `;
-            } else {
-                pickerToggle.className = 'px-4 py-2 rounded-lg transition-all duration-200 flex items-center gap-2 btn-secondary text-slate-300';
-                pickerToggle.innerHTML = `
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M2 21L12 11L21 2"/>
-                        <path d="M16 16L20 20"/>
-                        <path d="M15 15L19 19"/>
-                    </svg>
-                    Activate
-                `;
-            }
-        }
-
-        function showColorPreview(x, y, color) {
-            tooltipColor.style.backgroundColor = color;
-            tooltipText.textContent = color;
-            colorTooltip.style.left = x + 'px';
-            colorTooltip.style.top = (y - 10) + 'px';
-            colorTooltip.classList.add('visible');
-        }
-
-        function hideColorPreview() {
-            colorTooltip.classList.remove('visible');
-        }
-
-        function copyToClipboard(text) {
-            navigator.clipboard.writeText(text).then(() => {
-                showToast('Copied to clipboard!');
-            }).catch(() => {
-                showToast('Failed to copy');
-            });
-        }
-
-        function showToast(message) {
-            toastText.textContent = message;
-            toast.classList.add('show');
-            setTimeout(() => {
-                toast.classList.remove('show');
-            }, 2000);
-        }
-
-        // Initialize with default color
-        setSelectedColor('#6366f1');
-    </script>
-</body>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
 </html>
