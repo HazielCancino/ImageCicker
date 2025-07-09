@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Upload, Palette, Copy, Download, Eye, Pipette, ChevronLeft, ChevronRight, X, Move, Check } from 'lucide-react';
+import { Upload, Palette, Copy, Download, Eye, Pipette, ChevronLeft, ChevronRight, X, Move, Check, Maximize2, ZoomIn, ZoomOut, Star, RotateCcw } from 'lucide-react';
 
 const ColorPicker = () => {
   const [images, setImages] = useState([]);
@@ -13,12 +13,17 @@ const ColorPicker = () => {
   const [containerSize, setContainerSize] = useState({ width: 'auto', height: 'auto' });
   const [isResizing, setIsResizing] = useState(false);
   const [copiedColor, setCopiedColor] = useState('');
-  const [draggedImage, setDraggedImage] = useState(null);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [mainImageIndex, setMainImageIndex] = useState(0);
+  const [fullscreenImage, setFullscreenImage] = useState(null);
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const canvasRefs = useRef({});
   const fileInputRef = useRef(null);
   const imagesContainerRef = useRef(null);
   const containerRef = useRef(null);
+  const fullscreenRef = useRef(null);
 
   // Enhanced image upload with animations
   const handleImageUpload = (event) => {
@@ -29,11 +34,16 @@ const ColorPicker = () => {
       url: URL.createObjectURL(file),
       name: file.name,
       isLoading: true,
-      animationDelay: index * 150 // Stagger animation
+      animationDelay: index * 150
     }));
 
     setImages(prev => {
       const updatedImages = [...prev, ...newImages];
+      
+      // Set main image to first if no images existed
+      if (prev.length === 0) {
+        setMainImageIndex(0);
+      }
       
       // Set up canvas and trigger animations
       setTimeout(() => {
@@ -65,11 +75,52 @@ const ColorPicker = () => {
   };
 
   const removeImage = (imageId) => {
-    setImages(prev => prev.filter(img => img.id !== imageId));
+    setImages(prev => {
+      const newImages = prev.filter(img => img.id !== imageId);
+      const removedIndex = prev.findIndex(img => img.id === imageId);
+      
+      // Adjust main image index if needed
+      if (removedIndex === mainImageIndex) {
+        setMainImageIndex(0);
+      } else if (removedIndex < mainImageIndex) {
+        setMainImageIndex(mainImageIndex - 1);
+      }
+      
+      return newImages;
+    });
   };
 
-  // Fixed color picking functionality
-  const getColorAtPosition = (imageIndex, clientX, clientY) => {
+  const setAsMainImage = (index) => {
+    setMainImageIndex(index);
+  };
+
+  const openFullscreen = (index) => {
+    setFullscreenImage(index);
+    setZoomLevel(1);
+    setPanOffset({ x: 0, y: 0 });
+  };
+
+  const closeFullscreen = () => {
+    setFullscreenImage(null);
+    setZoomLevel(1);
+    setPanOffset({ x: 0, y: 0 });
+  };
+
+  const handleZoomIn = () => {
+    setZoomLevel(prev => Math.min(prev * 1.5, 5));
+  };
+
+  const handleZoomOut = () => {
+    setZoomLevel(prev => Math.max(prev / 1.5, 0.5));
+  };
+
+  const resetZoom = () => {
+    setZoomLevel(1);
+    setPanOffset({ x: 0, y: 0 });
+  };
+
+  // Enhanced color picking functionality
+  const getColorAtPosition = (imageIndex, clientX, clientY, isFullscreen = false) => {
     const image = images[imageIndex];
     if (!image) return '#000000';
 
@@ -77,16 +128,27 @@ const ColorPicker = () => {
     const canvas = canvasRefs.current[canvasId];
     if (!canvas) return '#000000';
 
-    // Get the displayed image element
-    const imgElement = document.querySelector(`[data-image-index="${imageIndex}"]`);
+    let imgElement;
+    if (isFullscreen) {
+      imgElement = fullscreenRef.current?.querySelector('img');
+    } else {
+      imgElement = document.querySelector(`[data-image-index="${imageIndex}"]`);
+    }
+    
     if (!imgElement) return '#000000';
 
     const ctx = canvas.getContext('2d');
     const rect = imgElement.getBoundingClientRect();
     
     // Calculate position relative to the image
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
+    let x = clientX - rect.left;
+    let y = clientY - rect.top;
+    
+    // Adjust for zoom and pan in fullscreen mode
+    if (isFullscreen) {
+      x = (x - panOffset.x) / zoomLevel;
+      y = (y - panOffset.y) / zoomLevel;
+    }
     
     // Ensure coordinates are within bounds
     if (x < 0 || y < 0 || x >= rect.width || y >= rect.height) {
@@ -94,8 +156,8 @@ const ColorPicker = () => {
     }
     
     // Calculate actual position on canvas
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
+    const scaleX = canvas.width / (isFullscreen ? rect.width / zoomLevel : rect.width);
+    const scaleY = canvas.height / (isFullscreen ? rect.height / zoomLevel : rect.height);
     const canvasX = Math.floor(x * scaleX);
     const canvasY = Math.floor(y * scaleY);
     
@@ -105,11 +167,9 @@ const ColorPicker = () => {
     }
     
     try {
-      // Get pixel data
       const imageData = ctx.getImageData(canvasX, canvasY, 1, 1);
       const pixel = imageData.data;
       
-      // Convert to hex
       const hex = '#' + [pixel[0], pixel[1], pixel[2]].map(x => {
         const hex = x.toString(16);
         return hex.length === 1 ? '0' + hex : hex;
@@ -122,14 +182,13 @@ const ColorPicker = () => {
     }
   };
 
-  const handleCanvasClick = (event, imageIndex) => {
+  const handleCanvasClick = (event, imageIndex, isFullscreen = false) => {
     if (!isPickerActive || images.length === 0) return;
     
-    const color = getColorAtPosition(imageIndex, event.clientX, event.clientY);
+    const color = getColorAtPosition(imageIndex, event.clientX, event.clientY, isFullscreen);
     if (color !== '#000000') {
       setSelectedColor(color);
       
-      // Add to history if not already present
       if (!colorHistory.includes(color)) {
         setColorHistory(prev => [color, ...prev.slice(0, 9)]);
       }
@@ -138,13 +197,34 @@ const ColorPicker = () => {
     setShowColorPreview(false);
   };
 
-  const handleCanvasMouseMove = (event, imageIndex) => {
+  const handleCanvasMouseMove = (event, imageIndex, isFullscreen = false) => {
     if (!isPickerActive || images.length === 0) return;
     
     setCursorPosition({ x: event.clientX, y: event.clientY });
-    const color = getColorAtPosition(imageIndex, event.clientX, event.clientY);
+    const color = getColorAtPosition(imageIndex, event.clientX, event.clientY, isFullscreen);
     setPreviewColor(color);
     setShowColorPreview(true);
+  };
+
+  // Panning functionality for fullscreen
+  const handlePanStart = (event) => {
+    if (zoomLevel > 1) {
+      setIsPanning(true);
+      setPanStart({ x: event.clientX - panOffset.x, y: event.clientY - panOffset.y });
+    }
+  };
+
+  const handlePanMove = (event) => {
+    if (isPanning) {
+      setPanOffset({
+        x: event.clientX - panStart.x,
+        y: event.clientY - panStart.y
+      });
+    }
+  };
+
+  const handlePanEnd = () => {
+    setIsPanning(false);
   };
 
   const copyToClipboard = async (color) => {
@@ -212,15 +292,25 @@ const ColorPicker = () => {
       if (!isResizing || !containerRef.current) return;
       
       const rect = containerRef.current.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      
+      // Calculate new dimensions
       const newWidth = e.clientX - rect.left;
       const newHeight = e.clientY - rect.top;
       
-      if (newWidth > 400 && newHeight > 300) {
-        setContainerSize({
-          width: `${newWidth}px`,
-          height: `${newHeight}px`
-        });
-      }
+      // Set maximum width to leave space for the right panel (minimum 400px)
+      const maxWidth = viewportWidth - 450; // Leave space for right panel
+      const maxHeight = viewportHeight - 200; // Leave space for header and padding
+      
+      // Apply constraints
+      const constrainedWidth = Math.min(Math.max(newWidth, 400), maxWidth);
+      const constrainedHeight = Math.min(Math.max(newHeight, 300), maxHeight);
+      
+      setContainerSize({
+        width: `${constrainedWidth}px`,
+        height: `${constrainedHeight}px`
+      });
     };
 
     const handleMouseUp = () => {
@@ -238,12 +328,25 @@ const ColorPicker = () => {
     };
   }, [isResizing]);
 
+  // Fullscreen pan handlers
+  useEffect(() => {
+    if (fullscreenImage !== null) {
+      document.addEventListener('mousemove', handlePanMove);
+      document.addEventListener('mouseup', handlePanEnd);
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handlePanMove);
+      document.removeEventListener('mouseup', handlePanEnd);
+    };
+  }, [isPanning, panStart]);
+
   const [hue, saturation, lightness] = rgbToHsl(selectedColor);
   const [red, green, blue] = hexToRgb(selectedColor);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-4">
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-none mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-white mb-2 bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
@@ -252,9 +355,9 @@ const ColorPicker = () => {
           <p className="text-slate-300">Upload multiple images and extract precise color values with a click</p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Image Upload & Display */}
-          <div className="lg:col-span-2">
+        <div className="flex gap-6">
+          {/* Image Upload & Display - Now flexible width */}
+          <div className="flex-1 min-w-0">
             <div 
               ref={containerRef}
               className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-6 border border-slate-700/50 relative transition-all duration-300"
@@ -309,94 +412,121 @@ const ColorPicker = () => {
                     </div>
                   </div>
 
-                  {/* Image Display with Horizontal Scrolling */}
-                  <div className="relative h-full">
-                    {images.length > 1 && (
-                      <>
-                        <button
-                          onClick={scrollLeft}
-                          className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-slate-900/80 hover:bg-slate-800 text-white p-2 rounded-full transition-all duration-300 hover:scale-110 z-10 shadow-lg"
-                        >
-                          <ChevronLeft size={24} />
-                        </button>
-                        <button
-                          onClick={scrollRight}
-                          className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-slate-900/80 hover:bg-slate-800 text-white p-2 rounded-full transition-all duration-300 hover:scale-110 z-10 shadow-lg"
-                        >
-                          <ChevronRight size={24} />
-                        </button>
-                      </>
-                    )}
-                    
-                    <div 
-                      ref={imagesContainerRef}
-                      className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide h-full"
-                      style={{
-                        scrollBehavior: 'smooth',
-                        scrollSnapType: 'x mandatory'
-                      }}
-                      onScroll={(e) => setScrollPosition(e.target.scrollLeft)}
-                    >
-                      {images.map((image, index) => (
-                        <div 
-                          key={image.id} 
-                          className={`flex-shrink-0 relative group transition-all duration-500 ease-out ${
-                            image.isLoading ? 'opacity-0 translate-y-4' : 'opacity-100 translate-y-0'
-                          }`}
-                          style={{
-                            scrollSnapAlign: 'start',
-                            transitionDelay: `${image.animationDelay}ms`
-                          }}
-                        >
-                          <div className="relative overflow-hidden rounded-xl">
-                            {image.isLoading && (
-                              <div className="absolute inset-0 bg-slate-700 animate-pulse rounded-xl z-10 flex items-center justify-center">
-                                <div className="w-8 h-8 border-2 border-purple-400 border-t-transparent rounded-full animate-spin"></div>
-                              </div>
-                            )}
-                            
+                  {/* Main Image Display */}
+                  <div className="relative h-full flex flex-col">
+                    {/* Main Image */}
+                    <div className="flex-1 mb-4 relative">
+                      {images[mainImageIndex] && (
+                        <div className="h-full flex items-center justify-center">
+                          <div className="relative group">
                             <img
-                              src={image.url}
-                              alt={`Image ${index + 1}`}
-                              data-image-index={index}
-                              className={`max-h-96 w-auto rounded-xl transition-all duration-300 transform hover:scale-105 ${
+                              src={images[mainImageIndex].url}
+                              alt={`Main Image`}
+                              data-image-index={mainImageIndex}
+                              className={`max-h-full max-w-full rounded-xl transition-all duration-300 transform hover:scale-105 ${
                                 isPickerActive ? 'cursor-crosshair' : 'cursor-pointer'
-                              } ${image.isLoading ? 'opacity-0' : 'opacity-100'}`}
-                              onClick={(e) => handleCanvasClick(e, index)}
-                              onMouseMove={(e) => handleCanvasMouseMove(e, index)}
+                              }`}
+                              onClick={(e) => handleCanvasClick(e, mainImageIndex)}
+                              onMouseMove={(e) => handleCanvasMouseMove(e, mainImageIndex)}
                               onMouseLeave={() => setShowColorPreview(false)}
-                              onLoad={() => {
-                                setImages(currentImages => 
-                                  currentImages.map(img => 
-                                    img.id === image.id ? { ...img, isLoading: false } : img
-                                  )
-                                );
-                              }}
                             />
                             
-                            {/* Hidden canvas for color extraction */}
-                            <canvas
-                              ref={el => canvasRefs.current[`canvas-${index}`] = el}
-                              style={{ display: 'none' }}
-                            />
-
-                            {/* Remove Image Button */}
-                            <button
-                              onClick={() => removeImage(image.id)}
-                              className="absolute top-2 right-2 bg-red-500/80 hover:bg-red-600 text-white p-2 rounded-full transition-all duration-300 hover:scale-110 opacity-0 group-hover:opacity-100 transform translate-y-1 group-hover:translate-y-0"
-                            >
-                              <X size={16} />
-                            </button>
+                            {/* Main Image Controls */}
+                            <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                              <button
+                                onClick={() => openFullscreen(mainImageIndex)}
+                                className="bg-blue-500/80 hover:bg-blue-600 text-white p-2 rounded-full transition-all duration-200 hover:scale-110"
+                                title="Fullscreen"
+                              >
+                                <Maximize2 size={16} />
+                              </button>
+                              <button
+                                onClick={() => removeImage(images[mainImageIndex].id)}
+                                className="bg-red-500/80 hover:bg-red-600 text-white p-2 rounded-full transition-all duration-200 hover:scale-110"
+                                title="Remove"
+                              >
+                                <X size={16} />
+                              </button>
+                            </div>
                           </div>
-                          <p className="text-slate-300 text-sm mt-2 truncate max-w-xs transition-colors duration-300 group-hover:text-white">
-                            {image.name}
-                          </p>
                         </div>
-                      ))}
+                      )}
+                    </div>
+
+                    {/* Thumbnail Strip */}
+                    <div className="relative">
+                      {images.length > 1 && (
+                        <>
+                          <button
+                            onClick={scrollLeft}
+                            className="absolute left-0 top-1/2 transform -translate-y-1/2 bg-slate-900/80 hover:bg-slate-800 text-white p-2 rounded-full transition-all duration-300 hover:scale-110 z-10 shadow-lg"
+                          >
+                            <ChevronLeft size={20} />
+                          </button>
+                          <button
+                            onClick={scrollRight}
+                            className="absolute right-0 top-1/2 transform -translate-y-1/2 bg-slate-900/80 hover:bg-slate-800 text-white p-2 rounded-full transition-all duration-300 hover:scale-110 z-10 shadow-lg"
+                          >
+                            <ChevronRight size={20} />
+                          </button>
+                        </>
+                      )}
+                      
+                      <div 
+                        ref={imagesContainerRef}
+                        className="flex gap-3 overflow-x-auto pb-2 px-8 scrollbar-hide"
+                        style={{
+                          scrollBehavior: 'smooth',
+                          scrollSnapType: 'x mandatory'
+                        }}
+                      >
+                        {images.map((image, index) => (
+                          <div 
+                            key={image.id} 
+                            className={`flex-shrink-0 relative group cursor-pointer transition-all duration-300 ${
+                              index === mainImageIndex ? 'scale-110' : 'hover:scale-105'
+                            }`}
+                            onClick={() => setAsMainImage(index)}
+                          >
+                            <div className="relative">
+                              <img
+                                src={image.url}
+                                alt={`Thumbnail ${index + 1}`}
+                                className={`h-16 w-16 object-cover rounded-lg transition-all duration-300 ${
+                                  index === mainImageIndex 
+                                    ? 'ring-2 ring-purple-500 shadow-lg shadow-purple-500/50' 
+                                    : 'ring-2 ring-slate-600 hover:ring-purple-400'
+                                }`}
+                              />
+                              
+                              {/* Main Image Indicator */}
+                              {index === mainImageIndex && (
+                                <div className="absolute -top-1 -right-1 bg-purple-500 rounded-full p-1">
+                                  <Star size={12} className="text-white fill-white" />
+                                </div>
+                              )}
+                              
+                              {/* Thumbnail Controls */}
+                              <div className="absolute inset-0 bg-black/50 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openFullscreen(index);
+                                  }}
+                                  className="bg-white/20 hover:bg-white/30 text-white p-1 rounded-full transition-all duration-200"
+                                  title="Inspect"
+                                >
+                                  <Maximize2 size={14} />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
                   
-                  {/* Enhanced Color Preview Tooltip */}
+                  {/* Color Preview Tooltip */}
                   {showColorPreview && (
                     <div
                       className="fixed pointer-events-none z-50 transform -translate-x-1/2 -translate-y-full transition-all duration-200"
@@ -437,8 +567,8 @@ const ColorPicker = () => {
             </div>
           </div>
 
-          {/* Color Information Panel */}
-          <div className="space-y-6">
+          {/* Color Information Panel - Fixed width */}
+          <div className="w-80 space-y-6 flex-shrink-0">
             {/* Current Color */}
             <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-6 border border-slate-700/50 transition-all duration-300">
               <h3 className="text-white text-lg font-semibold mb-4 flex items-center gap-2">
@@ -524,21 +654,80 @@ const ColorPicker = () => {
             <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-6 border border-slate-700/50 transition-all duration-300">
               <h3 className="text-white text-lg font-semibold mb-4">How to Use</h3>
               <div className="space-y-2 text-slate-300 text-sm">
-                <p>1. Upload multiple images by clicking the upload area</p>
-                <p>2. Scroll horizontally to view all images</p>
-                <p>3. Click "Activate" to enable color picking</p>
-                <p>4. Click anywhere on any image to extract the color</p>
-                <p>5. Copy color values by clicking the copy icons</p>
-                <p>6. Remove images using the X button</p>
-                <p>7. Drag the resize handle to adjust container size</p>
-                <p>8. View your color history below</p>
+                <p>1. Upload multiple images</p>
+                <p>2. Click thumbnails to set main image</p>
+                <p>3. Click fullscreen icon to inspect closely</p>
+                <p>4. Activate color picker and click images</p>
+                <p>5. Use zoom controls in fullscreen mode</p>
+                <p>6. Drag to resize the image container</p>
+                <p>7. Copy color values with one click</p>
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Fullscreen Modal */}
+      {fullscreenImage !== null && (
+        <div className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center">
+          <div 
+            ref={fullscreenRef}
+            className="relative w-full h-full overflow-hidden"
+            onMouseDown={handlePanStart}
+          >
+            {/* Fullscreen Controls */}
+            <div className="absolute top-4 right-4 flex gap-2 z-10">
+              <button
+                onClick={handleZoomOut}
+                className="bg-slate-800/80 hover:bg-slate-700 text-white p-3 rounded-full transition-all duration-200 hover:scale-110"
+                title="Zoom Out"
+              >
+                <ZoomOut size={20} />
+              </button>
+              <button
+                onClick={handleZoomIn}
+                className="bg-slate-800/80 hover:bg-slate-700 text-white p-3 rounded-full transition-all duration-200 hover              <button
+                onClick={handleZoomIn}
+                className="bg-slate-800/80 hover:bg-slate-700 text-white p-3 rounded-full transition-all duration-200 hover:scale-110"
+                title="Zoom In"
+              >
+                <ZoomIn size={20} />
+              </button>
+              <button
+                onClick={resetZoom}
+                className="bg-slate-800/80 hover:bg-slate-700 text-white p-3 rounded-full transition-all duration-200 hover:scale-110"
+                title="Reset Zoom"
+              >
+                <Move size={20} />
+              </button>
+              <button
+                onClick={() => closeFullscreen()}
+                className="bg-slate-800/80 hover:bg-red-600 text-white p-3 rounded-full transition-all duration-200 hover:scale-110"
+                title="Close Fullscreen"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Fullscreen Image */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              {images[fullscreenImage] && (
+                <img
+                  src={images[fullscreenImage].url}
+                  alt={`Fullscreen Image`}
+                  onClick={(e) => handleCanvasClick(e, fullscreenImage, true)}
+                  onMouseMove={(e) => handleCanvasMouseMove(e, fullscreenImage, true)}
+                  onMouseLeave={() => setShowColorPreview(false)}
+                  className="max-h-full max-w-full transition-all duration-300 transform hover:scale-105 cursor-crosshair"
+                  style={{
+                    transform: `scale(${zoomLevel}) translateX(${-panOffset.x}px) translateY(${-panOffset.y}px)`,
+                  }}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
-
-export default ColorPicker;
